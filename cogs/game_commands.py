@@ -263,11 +263,13 @@ class GameCommands(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
         
-        # Cleanup audio file
+        # Cleanup audio file (wait a bit to ensure transcription is done)
         try:
-            os.remove(audio_file)
-        except:
-            pass
+            await asyncio.sleep(0.5)  # Small delay to ensure file operations are complete
+            if os.path.exists(audio_file):
+                os.remove(audio_file)
+        except Exception as e:
+            print(f"[WARNING] Could not delete audio file {audio_file}: {e}")
     
     @app_commands.command(name="twister_practice", description="Practice a specific tongue twister")
     @app_commands.describe(twister_id="Tongue twister ID (1-20)")
@@ -370,11 +372,13 @@ class GameCommands(commands.Cog):
         )
         await interaction.followup.send(embed=embed)
         
-        # Cleanup audio file
+        # Cleanup audio file (wait a bit to ensure transcription is done)
         try:
-            os.remove(audio_file)
-        except:
-            pass
+            await asyncio.sleep(0.5)  # Small delay to ensure file operations are complete
+            if os.path.exists(audio_file):
+                os.remove(audio_file)
+        except Exception as e:
+            print(f"[WARNING] Could not delete audio file {audio_file}: {e}")
     
     @app_commands.command(name="twister_list", description="View all tongue twisters")
     @app_commands.describe(difficulty="Filter by difficulty")
@@ -1296,13 +1300,27 @@ class GameCommands(commands.Cog):
         embed.set_footer(text=f"Daily Challenge Rank: #{daily_rank} | Try again tomorrow for a new challenge!")
         await interaction.followup.send(embed=embed)
         
-        # Cleanup audio file
+        # Cleanup audio file (wait a bit to ensure transcription is done)
         try:
-            os.remove(audio_file)
-        except:
-            pass
+            await asyncio.sleep(0.5)  # Small delay to ensure file operations are complete
+            if os.path.exists(audio_file):
+                os.remove(audio_file)
+        except Exception as e:
+            print(f"[WARNING] Could not delete audio file {audio_file}: {e}")
 
 
 async def setup(bot: commands.Bot):
     """Load the cog."""
-    await bot.add_cog(GameCommands(bot))
+    cog = GameCommands(bot)
+    await bot.add_cog(cog)
+    
+    # Add all app_commands to the bot's command tree
+    # The @app_commands.command decorator creates Command objects that need to be registered
+    for name in dir(cog):
+        obj = getattr(cog, name, None)
+        if isinstance(obj, app_commands.Command):
+            # Try to add command, skip if already registered (e.g., on reload)
+            try:
+                bot.tree.add_command(obj)
+            except app_commands.CommandAlreadyRegistered:
+                pass  # Command already exists, skip it

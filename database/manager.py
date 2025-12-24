@@ -16,9 +16,9 @@ class DatabaseManager:
     def __init__(self):
         self.db_path = os.getenv("DATABASE_PATH", "./data/twister.db")
     
-    async def _get_connection(self) -> aiosqlite.Connection:
-        """Get database connection."""
-        return await aiosqlite.connect(self.db_path)
+    def _get_connection(self):
+        """Get database connection context manager."""
+        return aiosqlite.connect(self.db_path)
     
     # Player operations
     async def get_or_create_player(self, user_id: str, username: str) -> Dict:

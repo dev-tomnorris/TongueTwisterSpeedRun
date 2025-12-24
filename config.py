@@ -24,7 +24,7 @@ CHALLENGE_TWISTER_COUNT = 10
 CHALLENGE_TIME_PER_TWISTER = 30  # seconds
 
 # Voice settings
-VOICE_RECORDING_TIMEOUT = 30  # seconds
+VOICE_RECORDING_TIMEOUT = 10  # seconds
 VOICE_SILENCE_THRESHOLD = 0.5  # seconds of silence ends recording
 
 # Duel settings

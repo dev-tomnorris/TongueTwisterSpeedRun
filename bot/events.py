@@ -19,6 +19,23 @@ async def setup_events(bot: commands.Bot):
         print(f"{bot.user} has connected to Discord!")
         print(f"Bot is in {len(bot.guilds)} guilds")
         
+        # Sync slash commands with Discord
+        # First sync to all guilds for instant availability (testing)
+        for guild in bot.guilds:
+            try:
+                bot.tree.copy_global_to(guild=guild)
+                synced = await bot.tree.sync(guild=guild)
+                print(f"Synced {len(synced)} command(s) to guild: {guild.name}")
+            except Exception as e:
+                print(f"Failed to sync commands to {guild.name}: {e}")
+        
+        # Also sync globally (can take up to 1 hour)
+        try:
+            synced = await bot.tree.sync()
+            print(f"Synced {len(synced)} command(s) globally to Discord")
+        except Exception as e:
+            print(f"Failed to sync commands globally: {e}")
+        
         # Initialize Whisper
         model_name = os.getenv("WHISPER_MODEL", "base")
         print(f"Initializing Whisper with model: {model_name}")
