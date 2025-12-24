@@ -4,6 +4,18 @@ import re
 from typing import List, Set, Dict
 from difflib import SequenceMatcher
 
+# Number to word mappings - handles when Whisper transcribes numbers as digits
+NUMBER_TO_WORD: Dict[str, str] = {
+    '0': 'zero', '1': 'one', '2': 'two', '3': 'three', '4': 'four',
+    '5': 'five', '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine',
+    '10': 'ten', '11': 'eleven', '12': 'twelve', '13': 'thirteen',
+    '14': 'fourteen', '15': 'fifteen', '16': 'sixteen', '17': 'seventeen',
+    '18': 'eighteen', '19': 'nineteen', '20': 'twenty',
+    '30': 'thirty', '40': 'forty', '50': 'fifty', '60': 'sixty',
+    '70': 'seventy', '80': 'eighty', '90': 'ninety',
+    '100': 'hundred', '1000': 'thousand',
+}
+
 # Homophone mappings - words that sound the same but are spelled differently
 # This helps handle transcription errors where Whisper picks the wrong spelling
 HOMOPHONE_GROUPS: Dict[str, Set[str]] = {
@@ -32,6 +44,12 @@ HOMOPHONE_GROUPS: Dict[str, Set[str]] = {
     'seashore': {'seashore', 'sea shore', 'seashor'},
     'sea shore': {'seashore', 'sea shore', 'seashor'},
     'seashor': {'seashore', 'sea shore', 'seashor'},
+    'seaward': {'seaward', 'seward'},
+    'seward': {'seaward', 'seward'},
+    'six': {'six', '6'},
+    '6': {'six', '6'},
+    'sixth': {'sixth', '6th'},
+    '6th': {'sixth', '6th'},
 }
 
 # Create reverse lookup: word -> canonical form (first word in group)
@@ -41,11 +59,72 @@ for canonical, group in HOMOPHONE_GROUPS.items():
         HOMOPHONE_MAP[word] = canonical
 
 
+def convert_numbers_to_words(text: str) -> str:
+    """
+    Convert numeric digits to their word equivalents.
+    
+    Handles standalone numbers like "6" -> "six"
+    """
+    words = text.split()
+    converted_words = []
+    
+    for word in words:
+        # Check if word is a pure number (digits only)
+        if word.isdigit():
+            # Convert number to word if we have a mapping
+            word_lower = word.lower()
+            if word_lower in NUMBER_TO_WORD:
+                converted_words.append(NUMBER_TO_WORD[word_lower])
+            else:
+                # For numbers not in our mapping, try to keep as-is
+                # but we could add more sophisticated number-to-word conversion
+                converted_words.append(word)
+        else:
+            # Check for numbers with suffixes like "6th" -> "sixth"
+            # Match pattern: digits followed by letters (like "6th", "1st", etc.)
+            match = re.match(r'^(\d+)([a-z]+)$', word.lower())
+            if match:
+                num_part = match.group(1)
+                suffix = match.group(2)
+                if num_part in NUMBER_TO_WORD:
+                    # Convert "6th" -> "sixth", "1st" -> "first", etc.
+                    base_word = NUMBER_TO_WORD[num_part]
+                    # Handle common ordinal suffixes
+                    if suffix in ['th', 'st', 'nd', 'rd']:
+                        if base_word.endswith('y'):
+                            # "twenty" -> "twentieth"
+                            ordinal = base_word[:-1] + 'ieth'
+                        elif base_word.endswith('one'):
+                            ordinal = base_word[:-3] + 'first'
+                        elif base_word.endswith('two'):
+                            ordinal = base_word[:-3] + 'second'
+                        elif base_word.endswith('three'):
+                            ordinal = base_word[:-5] + 'third'
+                        elif base_word.endswith('five'):
+                            ordinal = base_word[:-4] + 'fifth'
+                        elif base_word.endswith('eight'):
+                            ordinal = base_word[:-1] + 'h'
+                        elif base_word.endswith('nine'):
+                            ordinal = base_word[:-1]
+                        else:
+                            ordinal = base_word + suffix
+                        converted_words.append(ordinal)
+                    else:
+                        converted_words.append(base_word + suffix)
+                else:
+                    converted_words.append(word)
+            else:
+                converted_words.append(word)
+    
+    return ' '.join(converted_words)
+
+
 def normalize_text(text: str) -> str:
     """
     Normalize text for comparison.
     
     - Convert to lowercase
+    - Convert numbers to words (6 -> six)
     - Remove punctuation (except spaces)
     - Collapse multiple spaces
     - Strip leading/trailing spaces
@@ -55,6 +134,10 @@ def normalize_text(text: str) -> str:
     
     # Convert to lowercase
     text = text.lower()
+    
+    # Convert numbers to words BEFORE removing punctuation
+    # This way "6" becomes "six" before we strip it
+    text = convert_numbers_to_words(text)
     
     # Remove punctuation except spaces
     text = re.sub(r'[^\w\s]', '', text)

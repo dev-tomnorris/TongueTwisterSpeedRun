@@ -161,18 +161,26 @@ class AudioRecorder:
                 else:
                     raise
             
-            print(f"[INFO] Recording from microphone for {duration} seconds...")
-            print(f"[INFO] Please speak now! Make sure your microphone is not muted.")
+            print(f"[INFO] Recording from microphone for up to {duration} seconds...")
+            print(f"[INFO] Please speak now! Recording will stop automatically when you finish.")
             
-            # Record audio with real-time level monitoring
+            # Record audio with real-time level monitoring and silence detection
             frames = []
             num_chunks = int(sample_rate / chunk * duration)
             max_level_seen = 0.0
             chunks_with_audio = 0
             
+            # Silence detection
+            silence_chunks = 0
+            chunks_per_second = sample_rate // chunk
+            silence_threshold_chunks = int(config.VOICE_SILENCE_THRESHOLD * chunks_per_second)
+            min_recording_chunks = int(config.VOICE_MIN_RECORDING_TIME * chunks_per_second)
+            has_detected_speech = False
+            
             for i in range(num_chunks):
                 if not self.recording:
                     break
+                    
                 data = stream.read(chunk, exception_on_overflow=False)
                 frames.append(data)
                 
@@ -181,11 +189,30 @@ class AudioRecorder:
                 max_level = np.abs(audio_data).max() / 32768.0
                 max_level_seen = max(max_level_seen, max_level)
                 
-                if max_level > 0.01:  # Threshold for "has audio"
+                # Determine if this chunk has audio
+                is_silent = max_level < config.VOICE_SILENCE_LEVEL
+                
+                if not is_silent:
                     chunks_with_audio += 1
+                    has_detected_speech = True
+                    silence_chunks = 0  # Reset silence counter
+                else:
+                    silence_chunks += 1
+                
+                # Check if we should stop early due to silence
+                # Only stop if:
+                # 1. We've recorded at least the minimum time (to avoid stopping before user speaks)
+                # 2. We've detected speech at some point (user has spoken)
+                # 3. We've had silence for the threshold duration
+                if (i >= min_recording_chunks and 
+                    has_detected_speech and 
+                    silence_chunks >= silence_threshold_chunks):
+                    seconds_recorded = (i + 1) * chunk / sample_rate
+                    print(f"[INFO] Silence detected for {config.VOICE_SILENCE_THRESHOLD}s, stopping recording early at {seconds_recorded:.1f}s")
+                    break
                 
                 # Print progress every second
-                if (i + 1) % (sample_rate // chunk) == 0:
+                if (i + 1) % chunks_per_second == 0:
                     seconds_recorded = (i + 1) * chunk / sample_rate
                     print(f"[INFO] Recording... {seconds_recorded:.1f}s (max level: {max_level_seen:.4f})")
             

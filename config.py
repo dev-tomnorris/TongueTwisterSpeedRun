@@ -25,7 +25,9 @@ CHALLENGE_TIME_PER_TWISTER = 30  # seconds
 
 # Voice settings
 VOICE_RECORDING_TIMEOUT = 10  # seconds
-VOICE_SILENCE_THRESHOLD = 0.5  # seconds of silence ends recording
+VOICE_SILENCE_THRESHOLD = 1.5  # seconds of silence ends recording (after speech detected)
+VOICE_SILENCE_LEVEL = 0.02  # Audio level below this is considered silence
+VOICE_MIN_RECORDING_TIME = 0.5  # Minimum recording time before silence detection kicks in
 
 # Duel settings
 DUEL_TIMEOUT = 120  # seconds to accept duel
