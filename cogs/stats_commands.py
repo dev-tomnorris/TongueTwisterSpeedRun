@@ -11,7 +11,7 @@ from utils.embeds import create_twister_list_embed
 class StatsCommands(commands.Cog):
     """Stats and leaderboard commands."""
     
-    def __init__(self, bot: discord.Bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
     
     @discord.slash_command(name="twister", description="Tongue twister game commands")
@@ -182,7 +182,7 @@ class StatsCommands(commands.Cog):
         await ctx.respond(embed=embed)
 
 
-def setup(bot: discord.Bot):
+def setup(bot: commands.Bot):
     """Load the cog."""
     bot.add_cog(StatsCommands(bot))
 

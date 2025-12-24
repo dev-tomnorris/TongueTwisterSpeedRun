@@ -1,6 +1,7 @@
 """Discord bot client setup."""
 
 import discord
+from discord.ext import commands
 import os
 from dotenv import load_dotenv
 
@@ -8,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def create_bot() -> discord.Bot:
+def create_bot() -> commands.Bot:
     """Create and configure Discord bot."""
     # Set up intents
     intents = discord.Intents.default()
@@ -17,8 +18,8 @@ def create_bot() -> discord.Bot:
     intents.guilds = True
     intents.members = True
     
-    # Create bot
-    bot = discord.Bot(intents=intents)
+    # Create bot (command_prefix is required even if we only use slash commands)
+    bot = commands.Bot(command_prefix='!', intents=intents)
     
     return bot
 

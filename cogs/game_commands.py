@@ -1,6 +1,7 @@
 """Game commands for tongue twister bot."""
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 import asyncio
 from datetime import datetime, date
@@ -41,78 +42,74 @@ import config
 class GameCommands(commands.Cog):
     """Game commands for tongue twister challenges."""
     
-    def __init__(self, bot: discord.Bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.voice_handler = VoiceHandler(bot)
         self.pending_duels: dict[str, dict] = {}  # duel_id -> duel info
     
-    @discord.slash_command(name="twister", description="Tongue twister game commands")
-    async def twister(self, ctx: discord.ApplicationContext):
-        """Main twister command group."""
-        pass
-    
-    @twister.subcommand(name="join", description="Join voice channel and start a session")
-    async def join(self, ctx: discord.ApplicationContext):
+    # Basic Commands
+    @app_commands.command(name="twister_join", description="Join voice channel and start a session")
+    async def join(self, interaction: discord.Interaction):
         """Join voice channel and start a session."""
-        if not ctx.author.voice or not ctx.author.voice.channel:
-            await ctx.respond("❌ You must be in a voice channel to use this command!", ephemeral=True)
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("❌ You must be in a voice channel to use this command!", ephemeral=True)
             return
         
         # Check if already in a session
-        if session_manager.is_active(str(ctx.author.id), str(ctx.author.voice.channel.id)):
-            await ctx.respond("❌ You already have an active session in this channel!", ephemeral=True)
+        if session_manager.is_active(str(interaction.user.id), str(interaction.user.voice.channel.id)):
+            await interaction.response.send_message("❌ You already have an active session in this channel!", ephemeral=True)
             return
         
         # Join voice channel
-        voice_client = await self.voice_handler.join_voice_channel(ctx.author)
+        voice_client = await self.voice_handler.join_voice_channel(interaction.user)
         if not voice_client:
-            await ctx.respond("❌ Failed to join voice channel. Check bot permissions!", ephemeral=True)
+            await interaction.response.send_message("❌ Failed to join voice channel. Check bot permissions!", ephemeral=True)
             return
         
         # Create session
         session = session_manager.create_session(
-            channel_id=str(ctx.author.voice.channel.id),
-            server_id=str(ctx.guild.id) if ctx.guild else "DM",
-            player_id=str(ctx.author.id),
-            player_name=ctx.author.display_name,
+            channel_id=str(interaction.user.voice.channel.id),
+            server_id=str(interaction.guild.id) if interaction.guild else "DM",
+            player_id=str(interaction.user.id),
+            player_name=interaction.user.display_name,
             mode='practice'
         )
         
         # Create database session
         await db_manager.create_session(
             session.session_id,
-            str(ctx.author.id),
-            str(ctx.guild.id) if ctx.guild else "DM",
-            str(ctx.author.voice.channel.id),
+            str(interaction.user.id),
+            str(interaction.guild.id) if interaction.guild else "DM",
+            str(interaction.user.voice.channel.id),
             'solo'
         )
         
         embed = create_session_started_embed(
-            ctx.author.voice.channel.name,
-            ctx.author.display_name
+            interaction.user.voice.channel.name,
+            interaction.user.display_name
         )
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @twister.subcommand(name="leave", description="End session and leave voice channel")
-    async def leave(self, ctx: discord.ApplicationContext):
+    @app_commands.command(name="twister_leave", description="End session and leave voice channel")
+    async def leave(self, interaction: discord.Interaction):
         """End session and leave voice channel."""
-        if not ctx.author.voice or not ctx.author.voice.channel:
-            await ctx.respond("❌ You're not in a voice channel!", ephemeral=True)
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("❌ You're not in a voice channel!", ephemeral=True)
             return
         
         session = session_manager.get_session(
-            str(ctx.author.id),
-            str(ctx.author.voice.channel.id)
+            str(interaction.user.id),
+            str(interaction.user.voice.channel.id)
         )
         
         if not session:
-            await ctx.respond("❌ You don't have an active session!", ephemeral=True)
+            await interaction.response.send_message("❌ You don't have an active session!", ephemeral=True)
             return
         
         # End session
         session = session_manager.end_session(
-            str(ctx.author.id),
-            str(ctx.author.voice.channel.id)
+            str(interaction.user.id),
+            str(interaction.user.voice.channel.id)
         )
         
         # Update database
@@ -124,7 +121,7 @@ class GameCommands(commands.Cog):
             )
         
         # Leave voice channel
-        await self.voice_handler.leave_voice_channel(ctx.author.voice.channel.id)
+        await self.voice_handler.leave_voice_channel(interaction.user.voice.channel.id)
         
         # Get best score from session
         best_score = session.total_score if session else 0
@@ -135,33 +132,34 @@ class GameCommands(commands.Cog):
             session.total_score if session else 0,
             best_score
         )
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @twister.subcommand(name="start", description="Start a random tongue twister challenge")
-    @discord.option(
-        name="difficulty",
-        description="Difficulty level",
-        choices=["easy", "medium", "hard", "insane", "random"],
-        required=False,
-        default="random"
-    )
+    @app_commands.command(name="twister_start", description="Start a random tongue twister challenge")
+    @app_commands.describe(difficulty="Difficulty level")
+    @app_commands.choices(difficulty=[
+        app_commands.Choice(name="Easy", value="easy"),
+        app_commands.Choice(name="Medium", value="medium"),
+        app_commands.Choice(name="Hard", value="hard"),
+        app_commands.Choice(name="Insane", value="insane"),
+        app_commands.Choice(name="Random", value="random")
+    ])
     async def start(
         self,
-        ctx: discord.ApplicationContext,
+        interaction: discord.Interaction,
         difficulty: Optional[str] = "random"
     ):
         """Start a random tongue twister challenge."""
-        if not ctx.author.voice or not ctx.author.voice.channel:
-            await ctx.respond("❌ You must be in a voice channel!", ephemeral=True)
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
             return
         
         session = session_manager.get_session(
-            str(ctx.author.id),
-            str(ctx.author.voice.channel.id)
+            str(interaction.user.id),
+            str(interaction.user.voice.channel.id)
         )
         
         if not session:
-            await ctx.respond("❌ You must join a session first with `/twister join`!", ephemeral=True)
+            await interaction.response.send_message("❌ You must join a session first with `/twister join`!", ephemeral=True)
             return
         
         # Get random twister
@@ -182,36 +180,36 @@ class GameCommands(commands.Cog):
             twister['difficulty'],
             is_practice=False
         )
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
         
         # Get voice client
-        voice_client = self.voice_handler.get_voice_client(ctx.author.voice.channel.id)
+        voice_client = self.voice_handler.get_voice_client(interaction.user.voice.channel.id)
         if not voice_client:
-            await ctx.followup.send("❌ Voice connection lost!", ephemeral=True)
+            await interaction.followup.send("❌ Voice connection lost!", ephemeral=True)
             return
         
         # Record audio
         recorder = AudioRecorder(voice_client)
-        audio_file = await recorder.record_user_audio(ctx.author.id, config.VOICE_RECORDING_TIMEOUT)
+        audio_file = await recorder.record_user_audio(interaction.user.id, config.VOICE_RECORDING_TIMEOUT)
         
         if not audio_file:
-            await ctx.followup.send("❌ Failed to record audio. Make sure your microphone is working!", ephemeral=True)
+            await interaction.followup.send("❌ Failed to record audio. Make sure your microphone is working!", ephemeral=True)
             session.waiting_for_attempt = False
             return
         
         # Transcribe
         whisper = get_whisper()
         if not whisper:
-            await ctx.followup.send("❌ Speech recognition not initialized!", ephemeral=True)
+            await interaction.followup.send("❌ Speech recognition not initialized!", ephemeral=True)
             session.waiting_for_attempt = False
             return
         
-        await ctx.followup.send("🎤 Processing your speech...", ephemeral=True)
+        await interaction.followup.send("🎤 Processing your speech...", ephemeral=True)
         
         spoken_text = await whisper.transcribe(audio_file)
         
         if not spoken_text:
-            await ctx.followup.send("❌ Could not understand your speech. Try speaking more clearly!", ephemeral=True)
+            await interaction.followup.send("❌ Could not understand your speech. Try speaking more clearly!", ephemeral=True)
             session.waiting_for_attempt = False
             return
         
@@ -232,9 +230,9 @@ class GameCommands(commands.Cog):
         session.waiting_for_attempt = False
         
         # Save to database
-        await db_manager.get_or_create_player(str(ctx.author.id), ctx.author.display_name)
+        await db_manager.get_or_create_player(str(interaction.user.id), interaction.user.display_name)
         attempt_id = await db_manager.save_attempt(
-            str(ctx.author.id),
+            str(interaction.user.id),
             twister['id'],
             spoken_text,
             accuracy,
@@ -245,7 +243,7 @@ class GameCommands(commands.Cog):
             session.session_id
         )
         await db_manager.update_player_stats(
-            str(ctx.author.id),
+            str(interaction.user.id),
             accuracy,
             time_seconds,
             score,
@@ -263,44 +261,39 @@ class GameCommands(commands.Cog):
             twister['difficulty'],
             mistakes
         )
-        await ctx.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed)
         
         # Cleanup audio file
         try:
-            import os
             os.remove(audio_file)
         except:
             pass
     
-    @twister.subcommand(name="practice", description="Practice a specific tongue twister")
-    @discord.option(
-        name="id",
-        description="Tongue twister ID (1-20)",
-        required=True
-    )
+    @app_commands.command(name="twister_practice", description="Practice a specific tongue twister")
+    @app_commands.describe(twister_id="Tongue twister ID (1-20)")
     async def practice(
         self,
-        ctx: discord.ApplicationContext,
+        interaction: discord.Interaction,
         twister_id: int
     ):
         """Practice a specific tongue twister."""
-        if not ctx.author.voice or not ctx.author.voice.channel:
-            await ctx.respond("❌ You must be in a voice channel!", ephemeral=True)
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
             return
         
         session = session_manager.get_session(
-            str(ctx.author.id),
-            str(ctx.author.voice.channel.id)
+            str(interaction.user.id),
+            str(interaction.user.voice.channel.id)
         )
         
         if not session:
-            await ctx.respond("❌ You must join a session first with `/twister join`!", ephemeral=True)
+            await interaction.response.send_message("❌ You must join a session first with `/twister join`!", ephemeral=True)
             return
         
         # Get twister
         twister = get_twister_by_id(twister_id)
         if not twister:
-            await ctx.respond(f"❌ Tongue twister #{twister_id} not found!", ephemeral=True)
+            await interaction.response.send_message(f"❌ Tongue twister #{twister_id} not found!", ephemeral=True)
             return
         
         # Update session
@@ -316,36 +309,36 @@ class GameCommands(commands.Cog):
             twister['difficulty'],
             is_practice=True
         )
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
         
         # Get voice client
-        voice_client = self.voice_handler.get_voice_client(ctx.author.voice.channel.id)
+        voice_client = self.voice_handler.get_voice_client(interaction.user.voice.channel.id)
         if not voice_client:
-            await ctx.followup.send("❌ Voice connection lost!", ephemeral=True)
+            await interaction.followup.send("❌ Voice connection lost!", ephemeral=True)
             return
         
         # Record audio
         recorder = AudioRecorder(voice_client)
-        audio_file = await recorder.record_user_audio(ctx.author.id, config.VOICE_RECORDING_TIMEOUT)
+        audio_file = await recorder.record_user_audio(interaction.user.id, config.VOICE_RECORDING_TIMEOUT)
         
         if not audio_file:
-            await ctx.followup.send("❌ Failed to record audio. Make sure your microphone is working!", ephemeral=True)
+            await interaction.followup.send("❌ Failed to record audio. Make sure your microphone is working!", ephemeral=True)
             session.waiting_for_attempt = False
             return
         
         # Transcribe
         whisper = get_whisper()
         if not whisper:
-            await ctx.followup.send("❌ Speech recognition not initialized!", ephemeral=True)
+            await interaction.followup.send("❌ Speech recognition not initialized!", ephemeral=True)
             session.waiting_for_attempt = False
             return
         
-        await ctx.followup.send("🎤 Processing your speech...", ephemeral=True)
+        await interaction.followup.send("🎤 Processing your speech...", ephemeral=True)
         
         spoken_text = await whisper.transcribe(audio_file)
         
         if not spoken_text:
-            await ctx.followup.send("❌ Could not understand your speech. Try speaking more clearly!", ephemeral=True)
+            await interaction.followup.send("❌ Could not understand your speech. Try speaking more clearly!", ephemeral=True)
             session.waiting_for_attempt = False
             return
         
@@ -375,25 +368,25 @@ class GameCommands(commands.Cog):
             value="Practice mode (no scoring)",
             inline=False
         )
-        await ctx.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed)
         
         # Cleanup audio file
         try:
-            import os
             os.remove(audio_file)
         except:
             pass
     
-    @twister.subcommand(name="list", description="View all tongue twisters")
-    @discord.option(
-        name="difficulty",
-        description="Filter by difficulty",
-        choices=["easy", "medium", "hard", "insane"],
-        required=False
-    )
+    @app_commands.command(name="twister_list", description="View all tongue twisters")
+    @app_commands.describe(difficulty="Filter by difficulty")
+    @app_commands.choices(difficulty=[
+        app_commands.Choice(name="Easy", value="easy"),
+        app_commands.Choice(name="Medium", value="medium"),
+        app_commands.Choice(name="Hard", value="hard"),
+        app_commands.Choice(name="Insane", value="insane")
+    ])
     async def list_twisters(
         self,
-        ctx: discord.ApplicationContext,
+        interaction: discord.Interaction,
         difficulty: Optional[str] = None
     ):
         """View all tongue twisters."""
@@ -403,22 +396,22 @@ class GameCommands(commands.Cog):
             twisters = get_all_twisters()
         
         embed = create_twister_list_embed(twisters, difficulty)
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @twister.subcommand(name="challenge", description="Start a timed challenge (10 twisters)")
-    async def challenge(self, ctx: discord.ApplicationContext):
+    @app_commands.command(name="twister_challenge", description="Start a timed challenge (10 twisters)")
+    async def challenge(self, interaction: discord.Interaction):
         """Start a timed challenge mode."""
-        if not ctx.author.voice or not ctx.author.voice.channel:
-            await ctx.respond("❌ You must be in a voice channel!", ephemeral=True)
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
             return
         
         session = session_manager.get_session(
-            str(ctx.author.id),
-            str(ctx.author.voice.channel.id)
+            str(interaction.user.id),
+            str(interaction.user.voice.channel.id)
         )
         
         if not session:
-            await ctx.respond("❌ You must join a session first with `/twister join`!", ephemeral=True)
+            await interaction.response.send_message("❌ You must join a session first with `/twister join`!", ephemeral=True)
             return
         
         # Update session for challenge mode
@@ -427,7 +420,7 @@ class GameCommands(commands.Cog):
         session.twisters_total = config.CHALLENGE_TWISTER_COUNT
         session.challenge_results = []
         
-        await ctx.respond(
+        await interaction.response.send_message(
             "⚡ **TIMED CHALLENGE MODE** ⚡\n\n"
             "Complete 10 tongue twisters as fast and accurately as possible!\n\n"
             "Rules:\n"
@@ -447,7 +440,6 @@ class GameCommands(commands.Cog):
         
         for i in range(config.CHALLENGE_TWISTER_COUNT):
             # Get random twister (mix of difficulties)
-            difficulties = ['easy', 'medium', 'hard']
             if i < 3:
                 difficulty = 'easy'
             elif i < 7:
@@ -470,35 +462,35 @@ class GameCommands(commands.Cog):
                 twister['difficulty'],
                 cumulative_score
             )
-            await ctx.followup.send(embed=embed)
+            await interaction.followup.send(embed=embed)
             
             # Get voice client
-            voice_client = self.voice_handler.get_voice_client(ctx.author.voice.channel.id)
+            voice_client = self.voice_handler.get_voice_client(interaction.user.voice.channel.id)
             if not voice_client:
-                await ctx.followup.send("❌ Voice connection lost!", ephemeral=True)
+                await interaction.followup.send("❌ Voice connection lost!", ephemeral=True)
                 break
             
             # Record audio
             recorder = AudioRecorder(voice_client)
             audio_file = await recorder.record_user_audio(
-                ctx.author.id,
+                interaction.user.id,
                 config.CHALLENGE_TIME_PER_TWISTER
             )
             
             if not audio_file:
-                await ctx.followup.send("❌ Failed to record audio. Skipping...", ephemeral=True)
+                await interaction.followup.send("❌ Failed to record audio. Skipping...", ephemeral=True)
                 continue
             
             # Transcribe
             whisper = get_whisper()
             if not whisper:
-                await ctx.followup.send("❌ Speech recognition not initialized!", ephemeral=True)
+                await interaction.followup.send("❌ Speech recognition not initialized!", ephemeral=True)
                 break
             
             spoken_text = await whisper.transcribe(audio_file)
             
             if not spoken_text:
-                await ctx.followup.send("❌ Could not understand speech. Skipping...", ephemeral=True)
+                await interaction.followup.send("❌ Could not understand speech. Skipping...", ephemeral=True)
                 continue
             
             # Calculate score
@@ -523,9 +515,9 @@ class GameCommands(commands.Cog):
             })
             
             # Save to database
-            await db_manager.get_or_create_player(str(ctx.author.id), ctx.author.display_name)
+            await db_manager.get_or_create_player(str(interaction.user.id), interaction.user.display_name)
             await db_manager.save_attempt(
-                str(ctx.author.id),
+                str(interaction.user.id),
                 twister['id'],
                 spoken_text,
                 accuracy,
@@ -536,7 +528,7 @@ class GameCommands(commands.Cog):
                 session.session_id
             )
             await db_manager.update_player_stats(
-                str(ctx.author.id),
+                str(interaction.user.id),
                 accuracy,
                 time_seconds,
                 score,
@@ -546,7 +538,6 @@ class GameCommands(commands.Cog):
             
             # Cleanup
             try:
-                import os
                 os.remove(audio_file)
             except:
                 pass
@@ -557,14 +548,14 @@ class GameCommands(commands.Cog):
         avg_accuracy = sum(r['accuracy'] for r in results) / len(results) if results else 0
         
         # Check if personal best
-        player_stats = await db_manager.get_player_stats(str(ctx.author.id))
+        player_stats = await db_manager.get_player_stats(str(interaction.user.id))
         is_pb = player_stats and cumulative_score > (player_stats.get('best_score', 0) or 0)
         
         # Get server rank
         rank = await db_manager.get_player_rank(
-            str(ctx.author.id),
+            str(interaction.user.id),
             'server',
-            str(ctx.guild.id) if ctx.guild else None
+            str(interaction.guild.id) if interaction.guild else None
         )
         
         embed = create_challenge_complete_embed(
@@ -574,27 +565,23 @@ class GameCommands(commands.Cog):
             is_pb,
             rank
         )
-        await ctx.followup.send(embed=embed)
-
-
-    @twister.subcommand(name="stats", description="View player statistics")
-    @discord.option(
-        name="user",
-        description="User to view stats for (default: yourself)",
-        required=False
-    )
+        await interaction.followup.send(embed=embed)
+    
+    # Stats Commands
+    @app_commands.command(name="twister_stats", description="View player statistics")
+    @app_commands.describe(user="User to view stats for (default: yourself)")
     async def stats(
         self,
-        ctx: discord.ApplicationContext,
+        interaction: discord.Interaction,
         user: Optional[discord.Member] = None
     ):
         """View player statistics."""
-        target_user = user or ctx.author
+        target_user = user or interaction.user
         
         stats = await db_manager.get_player_stats(str(target_user.id))
         
         if not stats:
-            await ctx.respond(f"❌ No statistics found for {target_user.mention}!", ephemeral=True)
+            await interaction.response.send_message(f"❌ No statistics found for {target_user.mention}!", ephemeral=True)
             return
         
         embed = discord.Embed(
@@ -651,30 +638,28 @@ class GameCommands(commands.Cog):
         
         embed.set_footer(text=f"Last played: {stats.get('last_played', 'Never')}")
         
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @twister.subcommand(name="leaderboard", description="View leaderboards")
-    @discord.option(
-        name="scope",
-        description="Leaderboard scope",
-        choices=["server", "global"],
-        required=False,
-        default="server"
-    )
-    @discord.option(
-        name="difficulty",
-        description="Filter by difficulty",
-        choices=["easy", "medium", "hard", "insane"],
-        required=False
-    )
+    @app_commands.command(name="twister_leaderboard", description="View leaderboards")
+    @app_commands.describe(scope="Leaderboard scope", difficulty="Filter by difficulty")
+    @app_commands.choices(scope=[
+        app_commands.Choice(name="Server", value="server"),
+        app_commands.Choice(name="Global", value="global")
+    ])
+    @app_commands.choices(difficulty=[
+        app_commands.Choice(name="Easy", value="easy"),
+        app_commands.Choice(name="Medium", value="medium"),
+        app_commands.Choice(name="Hard", value="hard"),
+        app_commands.Choice(name="Insane", value="insane")
+    ])
     async def leaderboard(
         self,
-        ctx: discord.ApplicationContext,
+        interaction: discord.Interaction,
         scope: Optional[str] = "server",
         difficulty: Optional[str] = None
     ):
         """View leaderboards."""
-        server_id = str(ctx.guild.id) if ctx.guild and scope == "server" else None
+        server_id = str(interaction.guild.id) if interaction.guild and scope == "server" else None
         
         leaderboard = await db_manager.get_leaderboard(
             scope=scope or "server",
@@ -684,7 +669,7 @@ class GameCommands(commands.Cog):
         )
         
         if not leaderboard:
-            await ctx.respond("❌ No leaderboard data available yet!", ephemeral=True)
+            await interaction.response.send_message("❌ No leaderboard data available yet!", ephemeral=True)
             return
         
         title = "🏆 Leaderboard"
@@ -730,7 +715,7 @@ class GameCommands(commands.Cog):
         
         # Find user's rank
         user_rank = await db_manager.get_player_rank(
-            str(ctx.author.id),
+            str(interaction.user.id),
             scope or "server",
             server_id
         )
@@ -740,46 +725,43 @@ class GameCommands(commands.Cog):
         else:
             embed.set_footer(text="Play to get on the leaderboard!")
         
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @twister.subcommand(name="duel", description="Challenge another player to a duel")
-    @discord.option(
-        name="player",
-        description="Player to challenge",
-        required=True
-    )
+    # Competitive Commands
+    @app_commands.command(name="twister_duel", description="Challenge another player to a duel")
+    @app_commands.describe(player="Player to challenge")
     async def duel(
         self,
-        ctx: discord.ApplicationContext,
-        opponent: discord.Member
+        interaction: discord.Interaction,
+        player: discord.Member
     ):
         """Challenge another player to a duel."""
-        if ctx.author.id == opponent.id:
-            await ctx.respond("❌ You can't duel yourself!", ephemeral=True)
+        if interaction.user.id == player.id:
+            await interaction.response.send_message("❌ You can't duel yourself!", ephemeral=True)
             return
         
-        if not ctx.author.voice or not ctx.author.voice.channel:
-            await ctx.respond("❌ You must be in a voice channel!", ephemeral=True)
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
             return
         
-        if not opponent.voice or opponent.voice.channel != ctx.author.voice.channel:
-            await ctx.respond("❌ Your opponent must be in the same voice channel!", ephemeral=True)
+        if not player.voice or player.voice.channel != interaction.user.voice.channel:
+            await interaction.response.send_message("❌ Your opponent must be in the same voice channel!", ephemeral=True)
             return
         
         # Create pending duel
         duel_id = str(uuid.uuid4())
         self.pending_duels[duel_id] = {
-            'challenger_id': str(ctx.author.id),
-            'opponent_id': str(opponent.id),
-            'channel_id': str(ctx.author.voice.channel.id),
-            'server_id': str(ctx.guild.id) if ctx.guild else "DM",
+            'challenger_id': str(interaction.user.id),
+            'opponent_id': str(player.id),
+            'channel_id': str(interaction.user.voice.channel.id),
+            'server_id': str(interaction.guild.id) if interaction.guild else "DM",
             'created_at': datetime.utcnow()
         }
         
         embed = discord.Embed(
             title="⚔️ DUEL CHALLENGE! ⚔️",
             description=(
-                f"{ctx.author.mention} has challenged {opponent.mention}!\n\n"
+                f"{interaction.user.mention} has challenged {player.mention}!\n\n"
                 f"Format: Best of {config.DUEL_BEST_OF} rounds\n"
                 f"- Same tongue twister for both players\n"
                 f"- Highest score wins each round\n"
@@ -787,27 +769,27 @@ class GameCommands(commands.Cog):
             ),
             color=discord.Color.red()
         )
-        embed.set_footer(text=f"{opponent.mention}, use /twister accept to accept! Challenge expires in 2 minutes.")
+        embed.set_footer(text=f"{player.mention}, use /twister accept to accept! Challenge expires in 2 minutes.")
         
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
         
         # Cleanup after timeout
         await asyncio.sleep(config.DUEL_TIMEOUT)
         if duel_id in self.pending_duels:
             del self.pending_duels[duel_id]
     
-    @twister.subcommand(name="accept", description="Accept a pending duel challenge")
-    async def accept(self, ctx: discord.ApplicationContext):
+    @app_commands.command(name="twister_accept", description="Accept a pending duel challenge")
+    async def accept(self, interaction: discord.Interaction):
         """Accept a pending duel challenge."""
         # Find pending duel for this user
         duel_id = None
         for did, duel in self.pending_duels.items():
-            if duel['opponent_id'] == str(ctx.author.id):
+            if duel['opponent_id'] == str(interaction.user.id):
                 duel_id = did
                 break
         
         if not duel_id:
-            await ctx.respond("❌ You don't have any pending duel challenges!", ephemeral=True)
+            await interaction.response.send_message("❌ You don't have any pending duel challenges!", ephemeral=True)
             return
         
         duel = self.pending_duels[duel_id]
@@ -817,18 +799,18 @@ class GameCommands(commands.Cog):
         opponent_id = int(duel['opponent_id'])
         channel_id = int(duel['channel_id'])
         
-        challenger = ctx.guild.get_member(challenger_id) if ctx.guild else None
+        challenger = interaction.guild.get_member(challenger_id) if interaction.guild else None
         if not challenger:
-            await ctx.respond("❌ Challenger not found!", ephemeral=True)
+            await interaction.response.send_message("❌ Challenger not found!", ephemeral=True)
             return
         
         # Join voice channel
-        voice_client = await self.voice_handler.join_voice_channel(ctx.author)
+        voice_client = await self.voice_handler.join_voice_channel(interaction.user)
         if not voice_client:
-            await ctx.respond("❌ Failed to join voice channel!", ephemeral=True)
+            await interaction.response.send_message("❌ Failed to join voice channel!", ephemeral=True)
             return
         
-        await ctx.respond("⚔️ Duel accepted! Starting match...")
+        await interaction.response.send_message("⚔️ Duel accepted! Starting match...")
         
         # Run duel
         challenger_wins = 0
@@ -849,7 +831,7 @@ class GameCommands(commands.Cog):
             
             twister = get_random_twister(difficulty)
             
-            await ctx.followup.send(
+            await interaction.followup.send(
                 f"⚔️ **ROUND {round_num}/{config.DUEL_BEST_OF}** ⚔️\n\n"
                 f"Both players will say:\n"
                 f"**\"{twister['text']}\"**\n\n"
@@ -860,31 +842,31 @@ class GameCommands(commands.Cog):
             
             # Challenger's turn
             challenger_score = await self._process_player_attempt(
-                ctx, voice_client, challenger, twister, round_num
+                interaction, voice_client, challenger, twister, round_num
             )
             
             if challenger_score is None:
-                await ctx.followup.send("❌ Challenger's attempt failed. Skipping round...")
+                await interaction.followup.send("❌ Challenger's attempt failed. Skipping round...")
                 continue
             
-            await ctx.followup.send(
+            await interaction.followup.send(
                 f"{challenger.mention}: **{challenger_score['score']:,} points** "
                 f"({challenger_score['accuracy']:.1f}% accuracy, {challenger_score['time']:.1f}s)"
             )
             
-            await ctx.followup.send(f"Now {ctx.author.mention}'s turn!\nI'm listening...")
+            await interaction.followup.send(f"Now {interaction.user.mention}'s turn!\nI'm listening...")
             
             # Opponent's turn
             opponent_score = await self._process_player_attempt(
-                ctx, voice_client, ctx.author, twister, round_num
+                interaction, voice_client, interaction.user, twister, round_num
             )
             
             if opponent_score is None:
-                await ctx.followup.send("❌ Opponent's attempt failed. Skipping round...")
+                await interaction.followup.send("❌ Opponent's attempt failed. Skipping round...")
                 continue
             
-            await ctx.followup.send(
-                f"{ctx.author.mention}: **{opponent_score['score']:,} points** "
+            await interaction.followup.send(
+                f"{interaction.user.mention}: **{opponent_score['score']:,} points** "
                 f"({opponent_score['accuracy']:.1f}% accuracy, {opponent_score['time']:.1f}s)"
             )
             
@@ -894,13 +876,13 @@ class GameCommands(commands.Cog):
                 winner = challenger.mention
             elif opponent_score['score'] > challenger_score['score']:
                 opponent_wins += 1
-                winner = ctx.author.mention
+                winner = interaction.user.mention
             else:
                 winner = "Tie"
             
-            await ctx.followup.send(
+            await interaction.followup.send(
                 f"🎉 {winner} wins Round {round_num}!\n\n"
-                f"Score: {challenger.mention}: {challenger_wins} | {ctx.author.mention}: {opponent_wins}"
+                f"Score: {challenger.mention}: {challenger_wins} | {interaction.user.mention}: {opponent_wins}"
             )
             
             await asyncio.sleep(2)
@@ -911,7 +893,7 @@ class GameCommands(commands.Cog):
             winner_wins = challenger_wins
             loser_wins = opponent_wins
         elif opponent_wins > challenger_wins:
-            winner = ctx.author
+            winner = interaction.user
             winner_wins = opponent_wins
             loser_wins = challenger_wins
         else:
@@ -920,21 +902,21 @@ class GameCommands(commands.Cog):
         if winner:
             embed = discord.Embed(
                 title="🏆 DUEL COMPLETE! 🏆",
-                description=f"{winner.mention} wins the duel!\n\nFinal Score: {challenger.mention}: {challenger_wins} | {ctx.author.mention}: {opponent_wins}",
+                description=f"{winner.mention} wins the duel!\n\nFinal Score: {challenger.mention}: {challenger_wins} | {interaction.user.mention}: {opponent_wins}",
                 color=discord.Color.gold()
             )
         else:
             embed = discord.Embed(
                 title="🤝 DUEL COMPLETE! 🤝",
-                description=f"It's a tie!\n\nFinal Score: {challenger.mention}: {challenger_wins} | {ctx.author.mention}: {opponent_wins}",
+                description=f"It's a tie!\n\nFinal Score: {challenger.mention}: {challenger_wins} | {interaction.user.mention}: {opponent_wins}",
                 color=discord.Color.blue()
             )
         
-        await ctx.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed)
     
     async def _process_player_attempt(
         self,
-        ctx: discord.ApplicationContext,
+        interaction: discord.Interaction,
         voice_client: discord.VoiceClient,
         player: discord.Member,
         twister: dict,
@@ -988,7 +970,6 @@ class GameCommands(commands.Cog):
         
         # Cleanup
         try:
-            import os
             os.remove(audio_file)
         except:
             pass
@@ -1000,37 +981,29 @@ class GameCommands(commands.Cog):
             'spoken': spoken_text
         }
     
-    @twister.subcommand(name="custom", description="Custom tongue twister commands")
-    async def custom(self, ctx: discord.ApplicationContext):
-        """Custom twister command group."""
-        pass
-    
-    @custom.subcommand(name="add", description="Add a custom tongue twister")
-    @discord.option(
-        name="text",
-        description="The tongue twister text",
-        required=True
-    )
-    @discord.option(
-        name="difficulty",
-        description="Difficulty level",
-        choices=["easy", "medium", "hard", "insane"],
-        required=False
-    )
+    # Custom Twister Commands
+    @app_commands.command(name="twister_custom_add", description="Add a custom tongue twister")
+    @app_commands.describe(text="The tongue twister text", difficulty="Difficulty level")
+    @app_commands.choices(difficulty=[
+        app_commands.Choice(name="Easy", value="easy"),
+        app_commands.Choice(name="Medium", value="medium"),
+        app_commands.Choice(name="Hard", value="hard"),
+        app_commands.Choice(name="Insane", value="insane")
+    ])
     async def custom_add(
         self,
-        ctx: discord.ApplicationContext,
+        interaction: discord.Interaction,
         text: str,
         difficulty: Optional[str] = None
     ):
         """Add a custom tongue twister."""
         # Validate text
         if len(text) < 10:
-            await ctx.respond("❌ Tongue twister must be at least 10 characters long!", ephemeral=True)
+            await interaction.response.send_message("❌ Tongue twister must be at least 10 characters long!", ephemeral=True)
             return
         
         if len(text) > 500:
-            await ctx.respond("❌ Tongue twister must be less than 500 characters!", ephemeral=True)
+            await interaction.response.send_message("❌ Tongue twister must be less than 500 characters!", ephemeral=True)
             return
         
         # Auto-detect difficulty if not provided
@@ -1068,7 +1041,7 @@ class GameCommands(commands.Cog):
                     difficulty,
                     len(text.split()),
                     "Custom",
-                    str(ctx.author.id),
+                    str(interaction.user.id),
                     False
                 )
             )
@@ -1084,10 +1057,10 @@ class GameCommands(commands.Cog):
         embed.add_field(name="ID", value=f"#{next_id}", inline=True)
         embed.set_footer(text="Use /twister practice to try it out!")
         
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @custom.subcommand(name="list", description="View custom tongue twisters")
-    async def custom_list(self, ctx: discord.ApplicationContext):
+    @app_commands.command(name="twister_custom_list", description="View custom tongue twisters")
+    async def custom_list(self, interaction: discord.Interaction):
         """View custom tongue twisters."""
         db_path = os.getenv("DATABASE_PATH", "./data/twister.db")
         
@@ -1111,7 +1084,7 @@ class GameCommands(commands.Cog):
                     })
         
         if not twisters:
-            await ctx.respond("❌ No custom tongue twisters found!", ephemeral=True)
+            await interaction.response.send_message("❌ No custom tongue twisters found!", ephemeral=True)
             return
         
         embed = discord.Embed(
@@ -1128,22 +1101,22 @@ class GameCommands(commands.Cog):
         embed.description = twister_list[:4096]
         embed.set_footer(text=f"Showing {len(twisters)} custom twisters. Use /twister practice <id> to try them!")
         
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
     
-    @twister.subcommand(name="daily", description="Start the daily challenge")
-    async def daily(self, ctx: discord.ApplicationContext):
+    @app_commands.command(name="twister_daily", description="Start the daily challenge")
+    async def daily(self, interaction: discord.Interaction):
         """Start the daily challenge."""
-        if not ctx.author.voice or not ctx.author.voice.channel:
-            await ctx.respond("❌ You must be in a voice channel!", ephemeral=True)
+        if not interaction.user.voice or not interaction.user.voice.channel:
+            await interaction.response.send_message("❌ You must be in a voice channel!", ephemeral=True)
             return
         
         session = session_manager.get_session(
-            str(ctx.author.id),
-            str(ctx.author.voice.channel.id)
+            str(interaction.user.id),
+            str(interaction.user.voice.channel.id)
         )
         
         if not session:
-            await ctx.respond("❌ You must join a session first with `/twister join`!", ephemeral=True)
+            await interaction.response.send_message("❌ You must join a session first with `/twister join`!", ephemeral=True)
             return
         
         # Get or create today's daily challenge
@@ -1176,7 +1149,7 @@ class GameCommands(commands.Cog):
             ) as cursor:
                 row = await cursor.fetchone()
                 if not row:
-                    await ctx.respond("❌ Daily challenge twister not found!", ephemeral=True)
+                    await interaction.response.send_message("❌ Daily challenge twister not found!", ephemeral=True)
                     return
                 
                 twister_text = row[0]
@@ -1210,36 +1183,36 @@ class GameCommands(commands.Cog):
         )
         embed.set_footer(text="I'm listening... (30 second timer)")
         
-        await ctx.respond(embed=embed)
+        await interaction.response.send_message(embed=embed)
         
         # Get voice client
-        voice_client = self.voice_handler.get_voice_client(ctx.author.voice.channel.id)
+        voice_client = self.voice_handler.get_voice_client(interaction.user.voice.channel.id)
         if not voice_client:
-            await ctx.followup.send("❌ Voice connection lost!", ephemeral=True)
+            await interaction.followup.send("❌ Voice connection lost!", ephemeral=True)
             return
         
         # Record audio
         recorder = AudioRecorder(voice_client)
-        audio_file = await recorder.record_user_audio(ctx.author.id, config.VOICE_RECORDING_TIMEOUT)
+        audio_file = await recorder.record_user_audio(interaction.user.id, config.VOICE_RECORDING_TIMEOUT)
         
         if not audio_file:
-            await ctx.followup.send("❌ Failed to record audio. Make sure your microphone is working!", ephemeral=True)
+            await interaction.followup.send("❌ Failed to record audio. Make sure your microphone is working!", ephemeral=True)
             session.waiting_for_attempt = False
             return
         
         # Transcribe
         whisper = get_whisper()
         if not whisper:
-            await ctx.followup.send("❌ Speech recognition not initialized!", ephemeral=True)
+            await interaction.followup.send("❌ Speech recognition not initialized!", ephemeral=True)
             session.waiting_for_attempt = False
             return
         
-        await ctx.followup.send("🎤 Processing your speech...", ephemeral=True)
+        await interaction.followup.send("🎤 Processing your speech...", ephemeral=True)
         
         spoken_text = await whisper.transcribe(audio_file)
         
         if not spoken_text:
-            await ctx.followup.send("❌ Could not understand your speech. Try speaking more clearly!", ephemeral=True)
+            await interaction.followup.send("❌ Could not understand your speech. Try speaking more clearly!", ephemeral=True)
             session.waiting_for_attempt = False
             return
         
@@ -1260,9 +1233,9 @@ class GameCommands(commands.Cog):
         session.waiting_for_attempt = False
         
         # Save to database
-        await db_manager.get_or_create_player(str(ctx.author.id), ctx.author.display_name)
+        await db_manager.get_or_create_player(str(interaction.user.id), interaction.user.display_name)
         attempt_id = await db_manager.save_attempt(
-            str(ctx.author.id),
+            str(interaction.user.id),
             twister_id,
             spoken_text,
             accuracy,
@@ -1273,7 +1246,7 @@ class GameCommands(commands.Cog):
             session.session_id
         )
         await db_manager.update_player_stats(
-            str(ctx.author.id),
+            str(interaction.user.id),
             accuracy,
             time_seconds,
             score,
@@ -1291,7 +1264,7 @@ class GameCommands(commands.Cog):
                 (attempt_id, challenge_date, user_id, score, accuracy, time_seconds)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
-                (attempt_id, today, str(ctx.author.id), score, accuracy, time_seconds)
+                (attempt_id, today, str(interaction.user.id), score, accuracy, time_seconds)
             )
             await db.commit()
         
@@ -1321,17 +1294,15 @@ class GameCommands(commands.Cog):
             mistakes
         )
         embed.set_footer(text=f"Daily Challenge Rank: #{daily_rank} | Try again tomorrow for a new challenge!")
-        await ctx.followup.send(embed=embed)
+        await interaction.followup.send(embed=embed)
         
         # Cleanup audio file
         try:
-            import os
             os.remove(audio_file)
         except:
             pass
 
 
-def setup(bot: discord.Bot):
+async def setup(bot: commands.Bot):
     """Load the cog."""
-    bot.add_cog(GameCommands(bot))
-
+    await bot.add_cog(GameCommands(bot))

@@ -1,13 +1,14 @@
 """Voice channel management."""
 
 import discord
+from discord.ext import commands
 from typing import Optional
 
 
 class VoiceHandler:
     """Manages Discord voice channel connections."""
     
-    def __init__(self, bot: discord.Bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.voice_clients: dict[int, discord.VoiceClient] = {}
     

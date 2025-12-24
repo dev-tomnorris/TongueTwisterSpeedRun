@@ -24,10 +24,10 @@ async def main():
     bot = create_bot()
     
     # Setup events
-    setup_events(bot)
+    await setup_events(bot)
     
     # Load cogs
-    bot.load_extension('cogs.game_commands')
+    await bot.load_extension('cogs.game_commands')
     
     # Get token
     token = os.getenv("DISCORD_TOKEN")

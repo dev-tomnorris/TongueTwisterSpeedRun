@@ -22,7 +22,7 @@ import config
 class CompetitiveCommands(commands.Cog):
     """Competitive play commands."""
     
-    def __init__(self, bot: discord.Bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.voice_handler = VoiceHandler(bot)
         self.pending_duels: Dict[str, Dict] = {}  # duel_id -> duel info
@@ -307,7 +307,7 @@ class CompetitiveCommands(commands.Cog):
         )
 
 
-def setup(bot: discord.Bot):
+def setup(bot: commands.Bot):
     """Load the cog."""
     bot.add_cog(CompetitiveCommands(bot))
 

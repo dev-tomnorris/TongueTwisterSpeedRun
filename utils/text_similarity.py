@@ -1,6 +1,7 @@
 """Text normalization and similarity calculations."""
 
 import re
+from typing import List
 from difflib import SequenceMatcher
 
 

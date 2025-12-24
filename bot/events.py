@@ -1,6 +1,8 @@
 """Discord bot event handlers."""
 
 import discord
+from discord import app_commands
+from discord.ext import commands
 from voice.speech_to_text import initialize_whisper, get_whisper
 import os
 from dotenv import load_dotenv
@@ -8,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-async def setup_events(bot: discord.Bot):
+async def setup_events(bot: commands.Bot):
     """Set up event handlers for the bot."""
     
     @bot.event
@@ -30,15 +32,16 @@ async def setup_events(bot: discord.Bot):
         print(f"Error in {event}:")
         traceback.print_exc()
     
-    @bot.event
-    async def on_application_command_error(ctx: discord.ApplicationContext, error: Exception):
+    @bot.tree.error
+    async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Handle application command errors."""
-        if isinstance(error, discord.CheckFailure):
-            await ctx.respond("You don't have permission to use this command.", ephemeral=True)
-        elif isinstance(error, discord.CommandOnCooldown):
-            await ctx.respond(f"This command is on cooldown. Try again in {error.retry_after:.1f} seconds.", ephemeral=True)
+        if isinstance(error, app_commands.CheckFailure):
+            await interaction.response.send_message("You don't have permission to use this command.", ephemeral=True)
+        elif isinstance(error, app_commands.CommandOnCooldown):
+            await interaction.response.send_message(f"This command is on cooldown. Try again in {error.retry_after:.1f} seconds.", ephemeral=True)
         else:
-            await ctx.respond("An error occurred while executing this command.", ephemeral=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message("An error occurred while executing this command.", ephemeral=True)
             import traceback
             traceback.print_exc()
 
