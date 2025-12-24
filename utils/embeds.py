@@ -261,45 +261,83 @@ def create_challenge_complete_embed(
         color=discord.Color.gold()
     )
     
+    # Calculate additional stats
+    total_time = sum(r.get('time', 0) for r in results)
+    successful = sum(1 for r in results if r.get('accuracy', 0) >= 80)
+    success_rate = (successful / len(results) * 100) if results else 0
+    
+    # Main stats
+    stats_text = (
+        f"**Total Score:** {total_score:,} points\n"
+        f"**Average Accuracy:** {average_accuracy:.1f}%\n"
+        f"**Total Time:** {total_time:.1f}s\n"
+        f"**Success Rate:** {success_rate:.1f}% ({successful}/{len(results)})"
+    )
+    
     embed.add_field(
-        name="Final Stats",
-        value=(
-            f"**Total Score:** {total_score:,} points\n"
-            f"**Average Accuracy:** {average_accuracy:.1f}%"
-        ),
+        name="📊 Final Stats",
+        value=stats_text,
         inline=False
     )
     
     if is_personal_best:
         embed.add_field(
             name="🎖️ Achievement",
-            value="New Personal Best!",
+            value="**New Personal Best!** 🎉",
             inline=True
         )
     
     if server_rank:
         embed.add_field(
-            name="📊 Server Rank",
-            value=f"#{server_rank}",
+            name="📈 Server Rank",
+            value=f"**#{server_rank}**",
             inline=True
         )
     
-    # Add breakdown of first few results
+    # Add detailed breakdown of all results
+    # Split into multiple fields if needed (Discord field limit is 1024 chars)
     if results:
-        breakdown = "\n".join(
-            f"{i+1}. {r.get('text', 'N/A')[:30]}... | {r.get('score', 0):,} pts | "
-            f"{r.get('accuracy', 0):.1f}% | {r.get('time', 0):.1f}s"
-            for i, r in enumerate(results[:5])
-        )
-        if len(results) > 5:
-            breakdown += f"\n... and {len(results) - 5} more"
-        embed.add_field(
-            name="Breakdown",
-            value=breakdown,
-            inline=False
-        )
+        # Group results into fields (each field can hold ~5-6 results depending on text length)
+        results_per_field = 5
+        num_fields = (len(results) + results_per_field - 1) // results_per_field
+        
+        for field_idx in range(num_fields):
+            start_idx = field_idx * results_per_field
+            end_idx = min(start_idx + results_per_field, len(results))
+            field_results = results[start_idx:end_idx]
+            
+            breakdown_lines = []
+            for i, r in enumerate(field_results):
+                result_num = start_idx + i + 1
+                text = r.get('text', 'N/A')
+                score = r.get('score', 0)
+                accuracy = r.get('accuracy', 0)
+                time_sec = r.get('time', 0)
+                difficulty = r.get('difficulty', 'unknown').capitalize()
+                
+                # Format: "1. [Text] | Score: X | Acc: Y% | Time: Zs | [Difficulty]"
+                line = (
+                    f"**{result_num}.** {text}\n"
+                    f"   Score: {score:,} pts | Acc: {accuracy:.1f}% | "
+                    f"Time: {time_sec:.1f}s | {difficulty}"
+                )
+                breakdown_lines.append(line)
+            
+            field_name = f"📝 Results {start_idx + 1}-{end_idx}" if num_fields > 1 else "📝 Results Breakdown"
+            breakdown_text = "\n\n".join(breakdown_lines)
+            
+            # Ensure we don't exceed Discord's 1024 character limit per field
+            if len(breakdown_text) > 1024:
+                # Truncate if needed (shouldn't happen with 5 results, but safety check)
+                breakdown_text = breakdown_text[:1020] + "..."
+            
+            embed.add_field(
+                name=field_name,
+                value=breakdown_text,
+                inline=False
+            )
     
-    embed.set_footer(text="Great job! 🎉")
+    embed.set_footer(text="Great job! 🎉 Try again to beat your score!")
     
     return embed
 
