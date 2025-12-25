@@ -1,5 +1,8 @@
 # Tongue Twister Speed Run Discord Bot - Design Document
 
+> **Implementation Status**: ✅ **FULLY IMPLEMENTED**  
+> This document has been updated to reflect the actual working implementation. All core features are functional and tested.
+
 ## Project Overview
 
 ### Purpose
@@ -174,15 +177,24 @@ Bot: "Accuracy: 95% | Time: 2.3 seconds | Score: 412 points! 🎉"
 
 **Responsibilities:**
 - Join/leave voice channels
-- Record player audio streams
+- Record player audio streams directly from Discord
 - Isolate individual player audio
 - Handle disconnections
 - Manage audio buffers
 
 **Technology:**
-- `discord.py[voice]` - Voice support
+- `discord.py[voice] >= 2.5.0` - Voice support
+- `discord-ext-voice-recv` - Direct audio receiving from Discord voice channels
 - `PyNaCl` - Audio encryption
-- `FFmpeg` - Audio processing
+- `ffmpeg4discord` - FFmpeg functionality bundled
+- `pyaudio` - Fallback for system microphone (if Discord audio receiving fails)
+- `scipy` - Audio resampling (48kHz to 16kHz for Whisper)
+
+**Implementation:**
+- Uses `VoiceRecvClient` from `discord-ext-voice-recv` to receive audio directly from Discord
+- Custom `AudioSink` implementation filters audio by user ID
+- Falls back to system microphone if Discord audio receiving is unavailable
+- Implements Voice Activity Detection (VAD) to only start recording when speech is detected
 
 #### 2. Speech-to-Text Engine
 **Purpose:** Convert recorded audio to text
@@ -220,18 +232,41 @@ from difflib import SequenceMatcher
 
 def calculate_accuracy(spoken: str, target: str) -> float:
     """Calculate similarity between spoken and target text."""
-    # Normalize text (lowercase, remove punctuation)
+    # Normalize text (lowercase, remove punctuation, convert numbers to words)
     spoken_normalized = normalize_text(spoken)
     target_normalized = normalize_text(target)
     
-    # Calculate similarity ratio (0.0 to 1.0)
-    similarity = SequenceMatcher(None, spoken_normalized, target_normalized).ratio()
+    # Word-level matching with homophone awareness
+    spoken_words = spoken_normalized.split()
+    target_words = target_normalized.split()
     
-    return similarity * 100  # Return as percentage
+    # Count matching words (including homophones)
+    matches = 0
+    max_len = max(len(spoken_words), len(target_words))
+    
+    for i in range(max_len):
+        if i >= len(spoken_words) or i >= len(target_words):
+            continue
+        spoken_word = spoken_words[i]
+        target_word = target_words[i]
+        
+        if spoken_word == target_word or are_homophones(spoken_word, target_word):
+            matches += 1
+    
+    # Word-level accuracy (70%) + character similarity (30%)
+    word_accuracy = matches / max_len if max_len > 0 else 0.0
+    char_similarity = SequenceMatcher(None, spoken_normalized, target_normalized).ratio()
+    final_accuracy = (word_accuracy * 0.7) + (char_similarity * 0.3)
+    
+    return final_accuracy * 100  # Return as percentage
 
 def normalize_text(text: str) -> str:
     """Normalize text for comparison."""
     import re
+    # Convert numbers to words (e.g., "6" -> "six", "6th" -> "sixth")
+    text = re.sub(r'(\d+)th', lambda m: NUMBER_TO_WORD.get(m.group(1), m.group(0)) + 'th', text)
+    text = re.sub(r'\b(\d+)\b', lambda m: NUMBER_TO_WORD.get(m.group(1), m.group(0)), text)
+    
     # Lowercase
     text = text.lower()
     # Remove punctuation except spaces
@@ -241,7 +276,21 @@ def normalize_text(text: str) -> str:
     # Strip leading/trailing spaces
     text = text.strip()
     return text
+
+# Homophone handling - words that sound the same but are spelled differently
+HOMOPHONE_GROUPS = {
+    'lorry': {'lorry', 'lori', 'lory', 'lowry'},
+    'six': {'six', '6'},
+    'seaward': {'seaward', 'seward'},
+    # ... more homophones
+}
 ```
+
+**Key Features:**
+- **Homophone awareness**: Words like "lorry" vs "Lori" are treated as correct
+- **Number-to-word conversion**: "6" is normalized to "six" for comparison
+- **Word-level matching**: More accurate than pure character matching
+- **Weighted scoring**: 70% word accuracy + 30% character similarity
 
 **Score Formula:**
 ```python
@@ -852,53 +901,56 @@ ORDER BY total_score DESC;
 
 ```
 twister-bot/
-├── main.py                     # Entry point
-├── config.py                   # Configuration
-├── requirements.txt            # Dependencies
-├── .env                        # Environment variables
+├── main.py                     # Entry point - initializes bot, database, Whisper
+├── config.py                   # Configuration constants (timeouts, thresholds, etc.)
+├── requirements.txt            # Python dependencies
+├── .env                        # Environment variables (DISCORD_TOKEN, WHISPER_MODEL)
 ├── .env.example                # Example env file
 ├── README.md                   # Setup instructions
+├── QUICK_START.md              # Quick setup guide
+├── start_bot.bat               # Windows batch file to start bot with debug output
 │
 ├── bot/
 │   ├── __init__.py
-│   ├── client.py              # Discord bot client
-│   └── events.py              # Event handlers
+│   ├── client.py              # Creates Discord bot client with intents
+│   └── events.py              # Event handlers (on_ready, error handling, command syncing)
 │
 ├── cogs/
 │   ├── __init__.py
-│   ├── game_commands.py       # Main game commands
+│   ├── game_commands.py       # Main game commands (join, start, practice, challenge, etc.)
 │   ├── stats_commands.py      # Stats and leaderboards
-│   └── competitive_commands.py # Duels, tournaments (Phase 3)
+│   └── competitive_commands.py # Duels, tournaments
 │
 ├── game/
 │   ├── __init__.py
-│   ├── session.py             # TwisterSession class
-│   ├── session_manager.py     # Manages active sessions
-│   └── scoring.py             # Scoring calculations
+│   ├── session.py             # TwisterSession dataclass
+│   ├── session_manager.py     # Manages active game sessions
+│   └── scoring.py             # Score calculation functions
 │
 ├── voice/
 │   ├── __init__.py
-│   ├── handler.py             # Voice channel management
-│   ├── recorder.py            # Audio recording
-│   └── speech_to_text.py      # Speech recognition
+│   ├── handler.py             # Voice channel management (join/leave)
+│   ├── recorder.py            # Audio recording with VAD and Discord audio receiving
+│   └── speech_to_text.py      # Whisper integration with optimizations
 │
 ├── data/
 │   ├── __init__.py
-│   └── tongue_twisters.py     # Twister library
+│   ├── tongue_twisters.py     # 20 starter tongue twisters
+│   ├── audio/                 # Temporary audio recordings (auto-cleaned)
+│   ├── temp/                  # Temporary files for Whisper processing
+│   └── twister.db             # SQLite database (auto-created)
 │
 ├── database/
 │   ├── __init__.py
-│   ├── models.py              # Database models
-│   └── manager.py             # Database operations
+│   ├── models.py              # SQL table schemas
+│   ├── migrations.py          # Database initialization
+│   └── manager.py             # Async database operations (aiosqlite)
 │
-├── utils/
-│   ├── __init__.py
-│   ├── formatters.py          # Message formatting
-│   ├── embeds.py              # Discord embed builders
-│   └── text_similarity.py     # Accuracy calculations
-│
-└── data/
-    └── twister.db             # SQLite database
+└── utils/
+    ├── __init__.py
+    ├── formatters.py          # Text formatting utilities
+    ├── embeds.py              # Discord embed builders
+    └── text_similarity.py     # Accuracy calculations with homophone support
 ```
 
 ---
@@ -1104,42 +1156,79 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.voice_states = True
 intents.guilds = True
+intents.members = True  # Required for user lookups
 ```
+
+**Dependencies (requirements.txt):**
+```
+discord.py[voice] >= 2.5.0      # Discord bot library with voice support
+PyNaCl >= 1.5.0                  # Audio encryption for Discord voice
+openai-whisper >= 20230314      # Speech-to-text (downloads models automatically)
+python-dotenv >= 1.0.0           # Environment variable management
+aiosqlite >= 0.19.0              # Async SQLite database operations
+python-Levenshtein >= 0.21.0    # String similarity calculations
+pydub >= 0.25.0                  # Audio processing utilities
+ffmpeg4discord >= 0.1.0          # FFmpeg functionality bundled
+pyaudio >= 0.2.14                # System microphone fallback
+scipy >= 1.10.0                  # Audio resampling (48kHz -> 16kHz)
+discord-ext-voice-recv           # Direct Discord audio receiving
+```
+
+**Configuration (config.py):**
+- `VOICE_RECORDING_TIMEOUT = 10` seconds
+- `VOICE_SILENCE_THRESHOLD = 1.5` seconds (silence ends recording)
+- `VOICE_SILENCE_LEVEL = 0.02` (audio level below this is silence)
+- `VOICE_ACTIVITY_THRESHOLD = 0.08` (audio level above this is speech for VAD)
+- `VOICE_PREBUFFER_SIZE = 5` chunks (kept before speech detection)
+- `VOICE_VAD_CONFIRMATION_CHUNKS = 3` (consecutive chunks with speech required)
 
 ### Audio Recording Flow
 
-```python
-# Pseudocode for audio recording
+**Actual Implementation:**
 
-async def record_player_audio(voice_client, player_id, timeout=30):
-    """Record audio from a specific player in voice channel."""
+```python
+async def record_user_audio(voice_client, user_id, timeout=10):
+    """Record audio from a specific user in Discord voice channel."""
     
-    # Start recording
-    audio_buffer = []
-    start_time = time.time()
-    
-    # Listen to voice channel
-    @voice_client.sink
-    async def audio_callback(user, audio_data):
-        if user.id == player_id:
-            audio_buffer.append(audio_data)
-    
-    # Wait for speech (max timeout seconds)
-    while time.time() - start_time < timeout:
-        if len(audio_buffer) > 0:
-            # Check for silence (end of speech)
-            if detect_silence(audio_buffer[-10:]):
-                break
-        await asyncio.sleep(0.1)
-    
-    # Stop recording
-    voice_client.stop_listening()
-    
-    # Convert audio buffer to file
-    audio_file = combine_audio_chunks(audio_buffer)
-    
-    return audio_file
+    # Use VoiceRecvClient to receive audio directly from Discord
+    if isinstance(voice_client, voice_recv.VoiceRecvClient):
+        # Create custom AudioSink that filters by user ID
+        class UserAudioSink(voice_recv.AudioSink):
+            def write(self, user, data: voice_recv.VoiceData):
+                if user and user.id == target_user_id:
+                    # Voice Activity Detection (VAD)
+                    audio_level = calculate_audio_level(data.pcm)
+                    has_speech = audio_level >= VOICE_ACTIVITY_THRESHOLD
+                    
+                    # Require 3 consecutive chunks with speech before starting
+                    if has_speech and speech_chunks_count >= 3:
+                        speech_detected = True
+                        audio_buffer.append(data.pcm)
+                    elif not speech_detected:
+                        pre_buffer.append(data.pcm)  # Buffer before speech
+        
+        # Start listening
+        voice_client.listen(sink)
+        
+        # Wait for recording with silence detection
+        while elapsed < timeout:
+            if speech_detected and silence_detected:
+                break  # Stop early on silence
+            await asyncio.sleep(0.1)
+        
+        # Stop listening and save to WAV file
+        voice_client.stop_listening()
+        save_audio_to_wav(audio_buffer)
 ```
+
+**Key Features:**
+- **Direct Discord Audio**: Uses `discord-ext-voice-recv` to receive audio directly from Discord voice channels
+- **Voice Activity Detection (VAD)**: Only starts recording when speech is detected (threshold: 0.08)
+- **Speech Confirmation**: Requires 3 consecutive chunks with speech before starting (prevents false positives)
+- **Pre-buffering**: Keeps last 5 chunks before speech detection to capture speech start
+- **Silence Detection**: Stops recording early when silence is detected (1.5 seconds of silence)
+- **Audio Normalization**: Prevents clipping by normalizing audio before saving
+- **Fallback Support**: Falls back to system microphone if Discord audio receiving fails
 
 ### Speech-to-Text Integration
 
@@ -1164,18 +1253,54 @@ def transcribe_audio(audio_file_path):
         return None
 ```
 
-**Option 2: OpenAI Whisper (Best Quality)**
+**Option 2: OpenAI Whisper (Best Quality)** ✅ **IMPLEMENTED**
 ```python
 import whisper
+from scipy import signal
+import wave
+import numpy as np
 
 # Load model once at startup
-model = whisper.load_model("base")
+model = whisper.load_model(model_name)  # Configurable: "base", "large", etc.
 
-def transcribe_audio(audio_file_path):
-    """Convert audio to text using Whisper."""
-    result = model.transcribe(audio_file_path)
+async def transcribe(audio_file_path: str, initial_prompt: str = None) -> str:
+    """Convert audio to text using Whisper with optimizations."""
+    
+    # Read WAV file directly (bypasses FFmpeg path issues)
+    with wave.open(audio_file_path, 'rb') as wav_file:
+        audio_bytes = wav_file.readframes(wav_file.getnframes())
+        audio_array = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+    
+    # Resample from 48kHz (Discord) to 16kHz (Whisper requirement)
+    if sample_rate != 16000:
+        audio_array = signal.resample(audio_array, target_samples)
+    
+    # Normalize to prevent clipping
+    if max_amplitude >= 0.99:
+        audio_array = audio_array / max_amplitude * 0.95
+    
+    # Transcribe with optimized parameters
+    result = model.transcribe(
+        audio_array,
+        language="en",
+        task="transcribe",
+        fp16=False,
+        temperature=0,  # Deterministic
+        best_of=5,  # Try 5 decodings, pick best
+        beam_size=5,  # Beam search width
+        condition_on_previous_text=False,
+        initial_prompt=initial_prompt  # Guide transcription with target text
+    )
+    
     return result["text"]
 ```
+
+**Key Optimizations:**
+- **Initial Prompt**: Passes target tongue twister text to guide transcription
+- **Direct WAV Reading**: Bypasses FFmpeg to avoid Windows path issues
+- **Audio Resampling**: Converts 48kHz Discord audio to 16kHz for Whisper
+- **Normalization**: Prevents clipping distortion
+- **Optimized Parameters**: `temperature=0`, `best_of=5`, `beam_size=5` for maximum accuracy
 
 **Option 3: Google Cloud Speech-to-Text**
 ```python
