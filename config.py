@@ -28,6 +28,9 @@ VOICE_RECORDING_TIMEOUT = 10  # seconds
 VOICE_SILENCE_THRESHOLD = 1.5  # seconds of silence ends recording (after speech detected)
 VOICE_SILENCE_LEVEL = 0.02  # Audio level below this is considered silence
 VOICE_MIN_RECORDING_TIME = 0.5  # Minimum recording time before silence detection kicks in
+VOICE_ACTIVITY_THRESHOLD = 0.08  # Audio level above this is considered speech (for VAD) - increased to avoid false positives
+VOICE_PREBUFFER_SIZE = 5  # Number of chunks to keep before speech detection (reduced to avoid capturing pre-speech audio)
+VOICE_VAD_CONFIRMATION_CHUNKS = 3  # Number of consecutive chunks with speech required before starting recording
 
 # Duel settings
 DUEL_TIMEOUT = 120  # seconds to accept duel

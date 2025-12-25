@@ -23,7 +23,7 @@ class WhisperSTT:
         self.model = whisper.load_model(self.model_name)
         print(f"Whisper model loaded successfully!")
     
-    async def transcribe(self, audio_file_path: str) -> Optional[str]:
+    async def transcribe(self, audio_file_path: str, initial_prompt: Optional[str] = None) -> Optional[str]:
         """
         Transcribe audio file to text asynchronously.
         
@@ -219,6 +219,13 @@ class WhisperSTT:
                 if max_amplitude < 0.01:
                     print(f"[WARNING] Audio appears to be very quiet or silent (max amplitude: {max_amplitude})")
                 
+                # Normalize audio to prevent clipping (if max is at 1.0, it's clipping)
+                if max_amplitude >= 0.99:
+                    print(f"[WARNING] Audio is clipping (max amplitude: {max_amplitude:.4f}). Normalizing...")
+                    # Normalize to 0.95 max to prevent clipping distortion
+                    audio_array = audio_array / max_amplitude * 0.95
+                    print(f"[DEBUG] Normalized audio - new max: {np.abs(audio_array).max():.4f}")
+                
                 # Whisper expects audio at 16kHz, so resample if necessary
                 target_sample_rate = 16000
                 if sample_rate != target_sample_rate:
@@ -229,7 +236,24 @@ class WhisperSTT:
                     print(f"[DEBUG] Audio already at {target_sample_rate}Hz, no resampling needed")
                 
                 print(f"[DEBUG] Calling Whisper transcribe with audio array...")
-                result = self.model.transcribe(audio_array)
+                # Use better transcription parameters for improved accuracy
+                transcribe_kwargs = {
+                    "language": "en",  # Specify English for better accuracy
+                    "task": "transcribe",  # Explicit transcription task
+                    "fp16": False,  # Use FP32 for better accuracy (we're on CPU anyway)
+                    "verbose": False,  # Reduce noise in output
+                    "temperature": 0,  # Deterministic output (no randomness)
+                    "best_of": 5,  # Try 5 different decodings and pick the best
+                    "beam_size": 5,  # Beam search width for better accuracy
+                    "condition_on_previous_text": False,  # Don't bias based on previous text
+                }
+                
+                # Add initial prompt if provided (helps guide transcription)
+                if initial_prompt:
+                    transcribe_kwargs["initial_prompt"] = initial_prompt
+                    print(f"[DEBUG] Using initial prompt to guide transcription: '{initial_prompt[:50]}...'")
+                
+                result = self.model.transcribe(audio_array, **transcribe_kwargs)
                 print(f"[DEBUG] Whisper transcription completed")
                 print(f"[DEBUG] Whisper result keys: {result.keys() if isinstance(result, dict) else 'not a dict'}")
                 if isinstance(result, dict):

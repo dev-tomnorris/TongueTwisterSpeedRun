@@ -8,4 +8,5 @@ pydub >= 0.25.0
 ffmpeg4discord >= 0.1.0
 pyaudio >= 0.2.14
 scipy >= 1.10.0
+discord-ext-voice-recv >= 0.3.3
 

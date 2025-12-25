@@ -206,7 +206,8 @@ class GameCommands(commands.Cog):
         
         await interaction.followup.send("🎤 Processing your speech...", ephemeral=True)
         
-        spoken_text = await whisper.transcribe(audio_file)
+        # Pass the target text as initial prompt to help Whisper transcribe correctly
+        spoken_text = await whisper.transcribe(audio_file, initial_prompt=twister['text'])
         
         if not spoken_text:
             await interaction.followup.send("❌ Could not understand your speech. Try speaking more clearly!", ephemeral=True)
@@ -491,7 +492,8 @@ class GameCommands(commands.Cog):
                 await interaction.followup.send("❌ Speech recognition not initialized!", ephemeral=True)
                 break
             
-            spoken_text = await whisper.transcribe(audio_file)
+            # Pass the target text as initial prompt to help Whisper transcribe correctly
+            spoken_text = await whisper.transcribe(audio_file, initial_prompt=twister['text'])
             
             if not spoken_text:
                 await interaction.followup.send("❌ Could not understand speech. Skipping...", ephemeral=True)
@@ -940,7 +942,8 @@ class GameCommands(commands.Cog):
             return None
         
         start_time = datetime.utcnow()
-        spoken_text = await whisper.transcribe(audio_file)
+        # Pass the target text as initial prompt to help Whisper transcribe correctly
+        spoken_text = await whisper.transcribe(audio_file, initial_prompt=twister['text'])
         
         if not spoken_text:
             return None
@@ -1213,7 +1216,8 @@ class GameCommands(commands.Cog):
         
         await interaction.followup.send("🎤 Processing your speech...", ephemeral=True)
         
-        spoken_text = await whisper.transcribe(audio_file)
+        # Pass the target text as initial prompt to help Whisper transcribe correctly
+        spoken_text = await whisper.transcribe(audio_file, initial_prompt=twister_text)
         
         if not spoken_text:
             await interaction.followup.send("❌ Could not understand your speech. Try speaking more clearly!", ephemeral=True)

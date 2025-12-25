@@ -4,6 +4,13 @@ import discord
 from discord.ext import commands
 from typing import Optional
 
+# Try to import voice receiving extension
+try:
+    from discord.ext import voice_recv
+    VOICE_RECV_AVAILABLE = True
+except ImportError:
+    VOICE_RECV_AVAILABLE = False
+
 
 class VoiceHandler:
     """Manages Discord voice channel connections."""
@@ -32,15 +39,34 @@ class VoiceHandler:
         
         # Check if already connected to this channel
         if channel.id in self.voice_clients:
-            return self.voice_clients[channel.id]
+            existing_client = self.voice_clients[channel.id]
+            # If VoiceRecv is available but we have a regular VoiceClient, reconnect
+            if VOICE_RECV_AVAILABLE and not isinstance(existing_client, voice_recv.VoiceRecvClient):
+                print("[INFO] Reconnecting with VoiceRecvClient to enable audio receiving...")
+                try:
+                    await existing_client.disconnect()
+                    del self.voice_clients[channel.id]
+                except:
+                    pass
+            else:
+                return existing_client
         
         # Connect to voice channel
         try:
-            voice_client = await channel.connect()
+            # Use voice_recv if available, otherwise use standard connection
+            if VOICE_RECV_AVAILABLE:
+                print(f"[INFO] Connecting with VoiceRecvClient for audio receiving...")
+                voice_client = await channel.connect(cls=voice_recv.VoiceRecvClient)
+                print(f"[INFO] Connected! Voice client type: {type(voice_client).__name__}")
+            else:
+                print(f"[WARNING] VoiceRecv not available, using standard VoiceClient")
+                voice_client = await channel.connect()
             self.voice_clients[channel.id] = voice_client
             return voice_client
         except Exception as e:
             print(f"Error joining voice channel: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     async def leave_voice_channel(self, channel_id: int) -> bool:

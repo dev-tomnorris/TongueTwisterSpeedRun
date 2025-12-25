@@ -243,7 +243,8 @@ class CompetitiveCommands(commands.Cog):
             return None
         
         start_time = datetime.utcnow()
-        spoken_text = await whisper.transcribe(audio_file)
+        # Pass the target text as initial prompt to help Whisper transcribe correctly
+        spoken_text = await whisper.transcribe(audio_file, initial_prompt=twister['text'])
         
         if not spoken_text:
             return None
